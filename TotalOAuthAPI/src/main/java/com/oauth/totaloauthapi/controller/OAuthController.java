@@ -24,18 +24,20 @@ import static java.lang.System.out;
 @Controller
 public class OAuthController {
     String basicURL = "";
-    String basicAuthURL = "authorize";
+    String basicAuthURL = "";
     String basicTokenURL = "token";
     String clientId = "";
     String redirectURI = "";
     String response_type = "code";
     String reqUrl = "";
 
-    @GetMapping("/login/{type}")
+    @RequestMapping("/login/{type}")
     public String getAuthCode(HttpServletRequest request, @PathVariable String type, Model model) throws UnsupportedEncodingException {
+        out.println(type);
         StringBuilder sb = new StringBuilder();
         if(type.equals("kakao")){
             basicURL="https://kauth.kakao.com/oauth/";
+            basicAuthURL = "authorize";
             clientId = "68885454f9552b677de69c7e28b15662";
             redirectURI = "http://localhost:8080/OAuth";
             sb.append(basicURL);
@@ -48,6 +50,7 @@ public class OAuthController {
             return "redirect:" + reqUrl;
         }else if(type.equals("naver")){
             basicURL = "https://nid.naver.com/oauth2.0/";
+            basicAuthURL = "authorize";
             clientId = "94NPD3qYbyrYI0aElBQa";//애플리케이션 클라이언트 아이디값";
             redirectURI = URLEncoder.encode("http://localhost:8080/OAuth", "UTF-8");
             SecureRandom random = new SecureRandom();
@@ -64,43 +67,50 @@ public class OAuthController {
 
             return "redirect:" + reqUrl;
         }else if(type.equals("google")){
+            System.out.println("google진입");
             basicURL = "https://accounts.google.com";
-            clientId = "[구글 아이디]";
+            basicAuthURL = "/o/oauth2/v2/auth";
+            clientId = "140816176832-ae4of851j9sshtum3jb8j19m2aa8g03l.apps.googleusercontent.com";
             redirectURI = "http://localhost:8080/OAuth";
 
-            sb.append(basicAuthURL);
-            sb.append("/o/oauth2/v2/auth?client_id=" + clientId);
+            sb.append(basicURL + basicAuthURL);
+            sb.append("?client_id=" + clientId);
             sb.append("&redirect_uri=" + redirectURI);
             sb.append("&response_type=" + response_type);
             sb.append("&scope=email%20profile%20openid&access_type=offline");
             reqUrl= sb.toString();
-
+            HttpSession session = request.getSession();
+            session.setAttribute("state", "google");
             return "redirect:" + reqUrl;
         }else {
-            return "jw";
+            return "redirect:http://localhost:8080/";
         }
     }
 
     @RequestMapping(value = "/OAuth")
-    public String oauthKakao(
+    public String OAuth(
             @RequestParam(value = "code", required = false) String code
             , @RequestParam(value = "state", required = false, defaultValue = "kakao") String state
             , RedirectAttributes redirectAttributes) throws Exception {
+        if(code.substring(0,3).equals("4/0"))
+            state = "google";
         out.println(state);
         String accessToken = this.getAccessToken(code,state);
-        out.println("access Token" + accessToken);
         HashMap<String, Object> userInfo;
         String name = "";
+        JSONObject jsonObject;
         if(state.equals("kakao")) {
             userInfo = getUserInfo(accessToken, "https://kapi.kakao.com/v2/user/me", "kakao");
-            JSONObject jsonObject = new JSONObject(userInfo);
-            name = jsonObject.getString("nickname");
+            jsonObject = new JSONObject(userInfo);
+        }else if(state.equals("google")){
+            userInfo = getUserInfo(accessToken, "https://oauth2.googleapis.com/tokeninfo", "google");
+            jsonObject = new JSONObject(userInfo);
         }else{
             userInfo = getUserInfo(accessToken, "https://openapi.naver.com/v1/nid/me", "naver");
-            JSONObject jsonObject = new JSONObject(userInfo);
-            name = jsonObject.getString("name");
-            name = name.replace("\"", "");
+            jsonObject = new JSONObject(userInfo);
         }
+        name = jsonObject.getString("name");
+        name = name.replace("\"", "");
 
         redirectAttributes.addAttribute("name", name);
         return "redirect:/directApiJSON";
@@ -112,9 +122,12 @@ public class OAuthController {
         String clientSecret = "";
         if(state.equals("kakao")) {
             reqURL = basicURL+basicTokenURL;
-        }else {
+        }else if(state.equals("google")){
+            clientSecret = "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";//애플리케이션 클라이언트 시크릿값";
+            reqURL = "https://oauth2.googleapis.com/token";
+        } else {
             clientSecret = "FOG51QIERW";//애플리케이션 클라이언트 시크릿값";
-            reqURL = "https://nid.naver.com/oauth2.0/token?grant_type=authorization_code";
+            reqURL = basicURL+"token?grant_type=authorization_code";
         }
         String access_Token = "";
         String refresh_Token = "";
@@ -131,20 +144,24 @@ public class OAuthController {
             //	POST 요청에 필요로 요구하는 파라미터 스트림을 통해 전송
             BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(conn.getOutputStream()));
             StringBuilder sb = new StringBuilder();
-            out.println("sb 진입");
-            if(state.equals("kakao")) {
+            if (state.equals("kakao")) {
                 sb.append("grant_type=authorization_code");
-                sb.append("&client_id="+clientId);  //본인이 발급받은 key
-                sb.append("&redirect_uri="+redirectURI);     // 본인이 설정해 놓은 경로
+                sb.append("&client_id=" + clientId);  //본인이 발급받은 key
+                sb.append("&redirect_uri=" + redirectURI);     // 본인이 설정해 놓은 경로
                 sb.append("&code=" + authorize_code);
-            }else {
+            }else if(state.equals("google")){
+                sb.append("grant_type=authorization_code");
+                sb.append("&client_id=" + clientId);  //본인이 발급받은 key
+                sb.append("&client_secret=" + clientSecret);  //본인이 발급받은 SecretKey
+                sb.append("&redirect_uri=" + redirectURI);     // 본인이 설정해 놓은 경로
+                sb.append("&code=" + authorize_code);
+            } else{
                 sb.append("&state=" + state);
                 sb.append("&client_id=" + clientId);  //본인이 발급받은 key
                 sb.append("&client_secret=" + clientSecret);  //본인이 발급받은 SecretKey
                 sb.append("&redirect_uri=" + redirectURI);     // 본인이 설정해 놓은 경로
                 sb.append("&code=" + authorize_code);
             }
-            out.println(sb);
             bw.write(sb.toString());
             bw.flush();
 
@@ -162,15 +179,22 @@ public class OAuthController {
             }
             System.out.println("response body : " + result);
 
+            if(state.equals("google")){
+                JsonParser parser = new JsonParser();
+                Object obj = parser.parse(result);
+                JsonObject jsonObject = (JsonObject) obj;
+                access_Token = jsonObject.get("access_token").getAsString();
+//                refresh_Token = jsonObject.get("refresh_Token").getAsString();
+            }else{
             //    Gson 라이브러리에 포함된 클래스로 JSON파싱 객체 생성
-            JsonParser parser = new JsonParser();
-            JsonElement element = parser.parse(result);
+                JsonParser parser = new JsonParser();
+                JsonElement element = parser.parse(result);
 
-            access_Token = element.getAsJsonObject().get("access_token").getAsString();
-            refresh_Token = element.getAsJsonObject().get("refresh_token").getAsString();
-
-            System.out.println("access_token : " + access_Token);
-            System.out.println("refresh_token : " + refresh_Token);
+                access_Token = element.getAsJsonObject().get("access_token").getAsString();
+                refresh_Token = element.getAsJsonObject().get("refresh_token").getAsString();
+            }
+//                System.out.println("access_token : " + access_Token);
+//                System.out.println("refresh_token : " + refresh_Token);
 
             br.close();
             bw.close();
@@ -205,24 +229,26 @@ public class OAuthController {
                 result += line;
             }
             System.out.println("response body : " + result);
+
+            JsonParser parser = new JsonParser();
+            JsonElement element = parser.parse(result);
+
             if (type.equals("kakao")){
+                JsonObject properties = element.getAsJsonObject().get("properties").getAsJsonObject();
+                String nickname = properties.getAsJsonObject().get("nickname").getAsString();
+                userInfo.put("accessToken", access_Token);
+                userInfo.put("name", nickname);
 
-            JsonParser parser = new JsonParser();
-            JsonElement element = parser.parse(result);
-            JsonObject properties = element.getAsJsonObject().get("properties").getAsJsonObject();
-            String nickname = properties.getAsJsonObject().get("nickname").getAsString();
-            userInfo.put("accessToken", access_Token);
-            userInfo.put("nickname", nickname);
+            } else if (type.equals("google")){
+                Object obj = parser.parse(result);
+                JsonObject jsonObject = (JsonObject) obj;
+                String name = jsonObject.getAsJsonObject().get("email").getAsString();
+                userInfo.put("name", name);
 
-            } else if (type.equals("naver")){
-
-            JsonParser parser = new JsonParser();
-            JsonElement element = parser.parse(result);
-            String name = String.valueOf(element.getAsJsonObject().get("response").getAsJsonObject().get("name"));
-            userInfo.put("name", name);
-
+            } else if (type.equals("naver")) {
+                String name = String.valueOf(element.getAsJsonObject().get("response").getAsJsonObject().get("name"));
+                userInfo.put("name", name);
             }
-
         } catch (IOException e) {
             // TODO Auto-generated catch block
             e.printStackTrace();
