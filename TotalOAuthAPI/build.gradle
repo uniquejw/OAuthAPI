@@ -27,6 +27,7 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     implementation group: 'com.google.code.gson', name: 'gson', version: '2.10.1'
     implementation group: 'org.json', name: 'json', version: '20220924'
+    providedRuntime 'org.springframework.boot:spring-boot-starter-tomcat'
 //    implementation 'org.springframework.security.oauth:spring-security-oauth2:2.5.2.RELEASE'
 }
 
